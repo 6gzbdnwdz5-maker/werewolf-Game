@@ -1,0 +1,13 @@
+{
+  "name": "werewolf-one-night-spring",
+  "version": "1.0.0",
+  "description": "一夜终极狼人杀新春版 - 五人横屏联机",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.6.1"
+  }
+}
