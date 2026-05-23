@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>一夜终极狼人杀·新春版</title>
+    <style>
+        * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; min-height: 100vh; background: linear-gradient(145deg, #1a472a 0%, #0e2a1a 100%); font-family: 'Segoe UI', 'PingFang SC', Roboto, system-ui; display: flex; justify-content: center; align-items: center; overflow: hidden; position: fixed; width: 100%; height: 100%; }
+        @media (orientation: portrait) {
+            body::before { content: "请将设备旋转为横屏游玩"; position: fixed; top:0; left:0; width:100%; height:100%; background:black; color:white; display:flex; align-items:center; justify-content:center; font-size:24px; z-index:9999; }
+        }
+        .game-container { width: 100vw; height: 100vh; background: radial-gradient(circle at 20% 30%, #2c5a2e, #0b3b1a); display: flex; flex-direction: column; overflow: hidden; }
+        .info-bar { background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); padding: 8px 16px; display: flex; justify-content: space-between; align-items: center; color: #FFD966; font-weight: bold; border-bottom: 2px solid #ffb347; z-index: 10; }
+        .room-code { background: #000000aa; padding: 4px 12px; border-radius: 30px; }
+        .player-num { background: #ff8c42aa; border-radius: 30px; padding: 4px 12px; }
+        .cards-area { flex: 1; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px; padding: 20px; perspective: 800px; }
+        .card { width: 100px; height: 140px; background: linear-gradient(135deg, #ff3c00, #ff7e00); border-radius: 16px; box-shadow: 0 10px 20px rgba(0,0,0,0.4); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; border: 2px solid #ffd966; }
+        .card:active { transform: scale(0.96); }
+        .card-back { background: repeating-linear-gradient(45deg, #ff4d00, #ff4d00 12px, #ffaa33 12px, #ffaa33 24px); }
+        .player-badge { position: fixed; bottom: 15px; left: 15px; background: #000000aa; backdrop-filter: blur(8px); padding: 6px 14px; border-radius: 40px; font-size: 20px; font-weight: bold; color: #FFE484; z-index: 20; }
+        .action-modal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); z-index: 200; display: flex; justify-content: center; align-items: center; flex-direction: column; }
+        .action-card { background: #fef0cf; width: 85%; max-width: 380px; border-radius: 48px; padding: 24px 20px; text-align: center; border: 3px solid #ffaa44; }
+        .action-title { font-size: 28px; font-weight: bold; color: #c13b00; }
+        .action-desc { font-size: 18px; margin: 16px 0; }
+        .btn { background: #ff914d; border: none; padding: 10px 20px; border-radius: 60px; font-size: 18px; font-weight: bold; color: white; cursor: pointer; box-shadow: 0 4px 0 #a14200; margin: 6px; }
+        .btn:active { transform: translateY(2px); }
+        .vote-area { position: fixed; bottom: 30px; left:0; right:0; display: flex; justify-content: center; gap: 15px; background: rgba(0,0,0,0.6); padding: 12px; z-index: 50; }
+        .vote-btn { background: #ffbb77; width: 65px; height: 65px; border-radius: 50%; font-size: 28px; font-weight: bold; border: 2px solid gold; }
+        .hidden { display: none; }
+        .speech-tip { background: #1e2a1aee; color: #ffecb3; padding: 12px; border-radius: 40px; text-align: center; margin: 10px; }
+        #globalMsg { position: fixed; bottom: 100px; left:0; right:0; text-align: center; color: white; text-shadow:1px 1px black; pointer-events: none; }
+    </style>
+</head>
+<body>
+<div class="game-container">
+    <div class="info-bar"><div>🐉 新春狼人杀</div><div class="room-code">房间: 0609</div><div class="player-num" id="playerCount">👥 0/5</div></div>
+    <div id="cardsPanel" class="cards-area"></div>
+    <div id="playerBadge" class="player-badge">玩家 #<span id="mySeat">?</span></div>
+    <div id="votePanel" class="vote-area hidden">
+        <button class="vote-btn" data-vote="1">1</button><button class="vote-btn" data-vote="2">2</button>
+        <button class="vote-btn" data-vote="3">3</button><button class="vote-btn" data-vote="4">4</button>
+        <button class="vote-btn" data-vote="5">5</button>
+    </div>
+    <div id="actionModal" class="action-modal hidden"></div>
+    <div id="globalMsg"></div>
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    const socket = io();
+    let mySeat = null;
+
+    function showGlobalMsg(msg, duration=2000) {
+        const el = document.getElementById('globalMsg');
+        el.innerText = msg;
+        setTimeout(()=>{ if(el.innerText === msg) el.innerText = ''; }, duration);
+    }
+
+    socket.on('connect', ()=>{
+        const code = prompt('🎐 输入房间号 (0609)');
+        if(code === '0609') socket.emit('joinGame', { roomCode: '0609' });
+        else { alert('房间号错误'); location.reload(); }
+    });
+
+    socket.on('roomJoined', ({ seat, playerCount }) => {
+        mySeat = seat;
+        document.getElementById('mySeat').innerText = seat;
+        document.getElementById('playerCount').innerText = `👥 ${playerCount}/5`;
+    });
+    socket.on('playerCountUpdate', (count) => { document.getElementById('playerCount').innerText = `👥 ${count}/5`; });
+    socket.on('gameStarting', () => alert('🎉 五人集齐！游戏开始！'));
+
+    socket.on('selectPhaseStart', ({ currentPickerSeat }) => {
+        renderBackCards(8);
+        if(mySeat === currentPickerSeat) {
+            showGlobalMsg('轮到您选牌！点击一张卡牌抽取', 4000);
+            enableCardSelection(true);
+        } else {
+            enableCardSelection(false);
+            showGlobalMsg(`等待玩家 ${currentPickerSeat} 选牌...`, 2000);
+        }
+    });
+    function renderBackCards(total=8) {
+        const panel = document.getElementById('cardsPanel');
+        panel.innerHTML = '';
+        for(let i=0;i<total;i++) {
+            const card = document.createElement('div');
+            card.className = 'card card-back';
+            card.innerHTML = `<div class="card-icon">🎴</div><div>福</div>`;
+            card.setAttribute('data-idx', i);
+            card.onclick = () => onPickCard(i);
+            panel.appendChild(card);
+        }
+    }
+    function enableCardSelection(enable) {
+        document.querySelectorAll('.card').forEach(c => c.style.pointerEvents = enable ? 'auto' : 'none');
+    }
+    function onPickCard(idx) {
+        socket.emit('pickCard', { seat: mySeat, cardIndex: idx });
+        enableCardSelection(false);
+        showGlobalMsg('已选牌，等待其他玩家...');
+    }
+    socket.on('assignRole', ({ role }) => {
+        showGlobalMsg(`你的角色是: ${role}`, 4000);
+    });
+    socket.on('nightPhaseStart', () => {
+        document.getElementById('cardsPanel').innerHTML = '<div style="color:white;text-align:center;">🌙 夜幕降临，技能执行中...</div>';
+        document.getElementById('votePanel')?.classList.add('hidden');
+    });
+
+    socket.on('actionTrigger', async ({ actionName, actionData }) => {
+        await showActionModal(actionName, actionData);
+        socket.emit('actionDone', { seat: mySeat, actionName, result: window.__lastActionResult || {} });
+        window.__lastActionResult = null;
+    });
+
+    function showActionModal(actionName, actionData) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('actionModal');
+            modal.classList.remove('hidden');
+            modal.innerHTML = `<div class="action-card"><div class="action-title">${actionName}</div><div class="action-desc" id="actionDesc"></div><div class="action-buttons" id="actionButtons"></div></div>`;
+            const descDiv = document.getElementById('actionDesc');
+            const btnsDiv = document.getElementById('actionButtons');
+
+            if (actionName === '贴贴娃行动') {
+                descDiv.innerText = '查看一张底牌，复制其技能及阵营（你仍为贴贴娃）';
+                btnsDiv.innerHTML = `<button class="btn" id="viewBottom">📖 查看一张底牌</button>`;
+                document.getElementById('viewBottom')?.addEventListener('click',()=>{
+                    socket.emit('actionRequestDetail', { seat: mySeat, action: '贴贴娃查看底牌' });
+                    window.__lastActionResult = { copiedCard: true };
+                    closeModalAndResolve(resolve);
+                });
+            } 
+            else if (actionName === '隐藏娃行动') {
+                if (actionData.isAlone) {
+                    descDiv.innerText = '你是独狼！可查看一张底牌。若底牌为隐藏娃可再看一张。';
+                    btnsDiv.innerHTML = `<button class="btn" id="loneView">🔍 查看底牌</button>`;
+                    document.getElementById('loneView')?.addEventListener('click',()=>{
+                        socket.emit('actionRequestDetail', { seat: mySeat, action: '独狼看底牌' });
+                        window.__lastActionResult = { viewBottom: true };
+                        closeModalAndResolve(resolve);
+                    });
+                } else {
+                    descDiv.innerText = '你是狼人之一，确认队友';
+                    btnsDiv.innerHTML = `<button class="btn" id="confirmTeam">🐺 确认队友</button>`;
+                    document.getElementById('confirmTeam')?.addEventListener('click',()=>{
+                        socket.emit('actionRequestDetail', { seat: mySeat, action: '狼队友确认' });
+                        window.__lastActionResult = { confirmed: true };
+                        closeModalAndResolve(resolve);
+                    });
+                }
+            }
+            else if (actionName === '棒棒娃行动') {
+                const hiddenList = actionData.hiddenSeats || [];
+                if (hiddenList.length === 0) descDiv.innerText = '场上没有隐藏娃？';
+                else if (hiddenList.length === 1) descDiv.innerText = `隐藏娃是玩家 ${hiddenList[0]}。请牢记并掩护他！`;
+                else descDiv.innerText = `隐藏娃是玩家 ${hiddenList.join(' 和 ')}。请牢记并掩护他们！`;
+                btnsDiv.innerHTML = `<button class="btn" id="confirmStick">👍 我已知道隐藏娃</button>`;
+                document.getElementById('confirmStick')?.addEventListener('click',()=>{
+                    socket.emit('actionRequestDetail', { seat: mySeat, action: '棒棒娃确认' });
+                    window.__lastActionResult = { known: true };
+                    closeModalAndResolve(resolve);
+                });
+            }
+            else if (actionName === '预知娃行动') {
+                descDiv.innerText = '查看两张底牌 或 查看一名其他玩家的角色卡';
+                btnsDiv.innerHTML = `<button class="btn" id="twoBottom">📜 查看两张底牌</button><button class="btn" id="seePlayer">👤 查看玩家角色</button>`;
+                document.getElementById('twoBottom')?.addEventListener('click',()=>{
+                    socket.emit('actionRequestDetail', { seat: mySeat, action: '预知娃看底牌双张' });
+                    window.__lastActionResult = { type: 'twoBottom' };
+                    closeModalAndResolve(resolve);
+                });
+                document.getElementById('seePlayer')?.addEventListener('click',()=>{
+                    let target = prompt('输入玩家编号(1-5，不能是自己)');
+                    if(target && target != mySeat && target>=1 && target<=5) {
+                        socket.emit('actionRequestDetail', { seat: mySeat, action: '预知娃看玩家', targetPlayer: parseInt(target) });
+                        window.__lastActionResult = { seenPlayer: true };
+                        closeModalAndResolve(resolve);
+                    } else alert('无效编号');
+                });
+            }
+            else if (actionName === '闹春娃行动') {
+                descDiv.innerText = '交换除自己以外任意两名玩家的角色卡（不可查看）';
+                btnsDiv.innerHTML = `<button class="btn" id="exchangeBtn">🔄 交换两名玩家角色</button>`;
+                document.getElementById('exchangeBtn')?.addEventListener('click',()=>{
+                    let a = prompt('第一个玩家编号(1-5,不能是自己)');
+                    let b = prompt('第二个玩家编号(1-5,不能是自己)');
+                    if(a && b && a!=mySeat && b!=mySeat && a!==b && a>=1&&a<=5&&b>=1&&b<=5) {
+                        socket.emit('actionRequestDetail', { seat: mySeat, action: '闹春娃交换', playerA: parseInt(a), playerB: parseInt(b) });
+                        window.__lastActionResult = { swap: true };
+                        closeModalAndResolve(resolve);
+                    } else alert('输入有误');
+                });
+            }
+            else if (actionName === '转运娃行动') {
+                descDiv.innerText = '将自己的角色卡与一张底牌交换（不可查看）';
+                btnsDiv.innerHTML = `<button class="btn" id="exchangeBottom">🃏 与底牌交换</button>`;
+                document.getElementById('exchangeBottom')?.addEventListener('click',()=>{
+                    socket.emit('actionRequestDetail', { seat: mySeat, action: '转运娃交换底牌' });
+                    window.__lastActionResult = { exchanged: true };
+                    closeModalAndResolve(resolve);
+                });
+            }
+            else {
+                closeModalAndResolve(resolve);
+            }
+        });
+    }
+
+    function closeModalAndResolve(resolve) {
+        document.getElementById('actionModal').classList.add('hidden');
+        resolve();
+    }
+
+    socket.on('privateMessage', ({ title, content }) => { alert(`${title}\n${content}`); });
+
+    socket.on('dayPhaseStart', async () => {
+        for(let i=1;i<=3;i++) {
+            await new Promise(r => {
+                const msgDiv = document.createElement('div');
+                msgDiv.className = 'speech-tip';
+                msgDiv.innerText = `🗣️ 第${i}轮发言 (点击继续)`;
+                const btn = document.createElement('button');
+                btn.innerText = '继续';
+                btn.className = 'btn';
+                btn.onclick = () => { msgDiv.remove(); r(); };
+                msgDiv.appendChild(btn);
+                document.getElementById('cardsPanel').appendChild(msgDiv);
+            });
+        }
+        showGlobalMsg('自由讨论 5 秒后投票', 5000);
+        setTimeout(() => {
+            document.getElementById('votePanel')?.classList.remove('hidden');
+            attachVoteButtons();
+        }, 5000);
+    });
+
+    function attachVoteButtons() {
+        document.querySelectorAll('.vote-btn').forEach(btn => {
+            btn.onclick = () => {
+                const target = parseInt(btn.getAttribute('data-vote'));
+                if(target === mySeat) { alert('不能投自己'); return; }
+                socket.emit('castVote', { seat: mySeat, targetSeat: target });
+                document.getElementById('votePanel').classList.add('hidden');
+                showGlobalMsg(`投票给玩家${target}`);
+            };
+        });
+    }
+
+    socket.on('voteResult', ({ resultMsg, winner }) => {
+        alert(`🎊 游戏结束 🎊\n${resultMsg}\n获胜方: ${winner}`);
+        setTimeout(()=> location.reload(), 5000);
+    });
+    socket.on('errorMsg', (msg) => alert(msg));
+</script>
+</body>
+</html>
